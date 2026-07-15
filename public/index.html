@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<title>Firefox Remote Control</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #14151a;
+    --panel: #1c1e26;
+    --border: #2c2f3a;
+    --text: #e7e8ec;
+    --muted: #8b8d98;
+    --accent: #4f8cff;
+    --danger: #e5534b;
+    --ok: #35b56a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 12px 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text);
+  }
+  .status {
+    font-size: 13px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--danger);
+  }
+  .dot.on { background: var(--ok); }
+  .spacer { flex: 1; }
+  button {
+    font: inherit;
+    font-size: 13px;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #262835;
+    color: var(--text);
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+  main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    background: #0b0c0f;
+  }
+  #screen {
+    width: 100%;
+    height: 100%;
+  }
+  .placeholder {
+    color: var(--muted);
+    font-size: 14px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Firefox remote control</h1>
+    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Chưa chạy</span></div>
+    <div class="spacer"></div>
+    <button id="startBtn" class="primary">Bắt đầu phiên</button>
+    <button id="stopBtn" class="danger" disabled>Dừng phiên</button>
+  </header>
+  <main>
+    <div id="screen"><div class="placeholder">Bấm "Bắt đầu phiên" để khởi động Firefox</div></div>
+  </main>
+
+  <script type="module">
+    import RFB from './novnc/core/rfb.js';
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const screenEl = document.getElementById('screen');
+
+    let rfb = null;
+
+    // Nếu bạn bật API_TOKEN ở server, set token này (hoặc lấy từ prompt/localStorage của bạn)
+    const API_TOKEN = "jasmin";
+
+    async function api(pathName, opts = {}) {
+      const res = await fetch(pathName, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Api-Token': API_TOKEN },
+        ...opts,
+      });
+      if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+      return res.json();
+    }
+
+    function setRunning(running) {
+      statusDot.classList.toggle('on', running);
+      statusText.textContent = running ? 'Đang chạy' : 'Chưa chạy';
+      startBtn.disabled = running;
+      stopBtn.disabled = !running;
+    }
+
+    function connectVnc() {
+      screenEl.innerHTML = '';
+      const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/vnc';
+      rfb = new RFB(screenEl, url);
+      rfb.viewOnly = false;
+      rfb.scaleViewport = true;
+      rfb.addEventListener('disconnect', () => {
+        screenEl.innerHTML = '<div class="placeholder">Mất kết nối tới phiên Firefox</div>';
+      });
+    }
+
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      statusText.textContent = 'Đang khởi động...';
+      try {
+        await api('/api/session/start');
+        setRunning(true);
+        // đợi Xvfb/Firefox/x11vnc lên hẳn rồi mới connect VNC
+        setTimeout(connectVnc, 1500);
+      } catch (err) {
+        alert('Lỗi khi khởi động: ' + err.message);
+        startBtn.disabled = false;
+        statusText.textContent = 'Chưa chạy';
+      }
+    });
+
+    stopBtn.addEventListener('click', async () => {
+      await api('/api/session/stop');
+      rfb?.disconnect();
+      setRunning(false);
+      screenEl.innerHTML = '<div class="placeholder">Bấm "Bắt đầu phiên" để khởi động Firefox</div>';
+    });
+  </script>
+</body>
+</html>
