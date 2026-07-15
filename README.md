@@ -8,10 +8,18 @@ Node.js server chạy Firefox trên virtual display của VPS và stream/điều
 
 ```bash
 sudo apt update
-sudo apt install -y xvfb x11vnc fluxbox firefox-esr
+sudo apt install -y xvfb x11vnc fluxbox
 ```
 
-Ghi chú:
+```bash
+wget "https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=en-US" -O firefox.tar.xz
+tar -xf firefox.tar.xz
+rm -rf firefox.tar.xz
+./firefox/firefox --version
+```
+
+
+Ghi chú:sudo snap install firefox
 - `xvfb`: màn hình ảo (không cần GPU/monitor).
 - `x11vnc`: phát màn hình ảo ra giao thức VNC.
 - `fluxbox`: window manager nhẹ, cho Firefox có viền cửa sổ (tuỳ chọn, có thể tắt bằng `useWindowManager: false`).

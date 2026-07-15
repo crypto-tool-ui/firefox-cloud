@@ -1,165 +1,235 @@
 <!doctype html>
-<html lang="vi">
+<html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>Firefox Remote Control</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<style>
-  :root {
-    --bg: #14151a;
-    --panel: #1c1e26;
-    --border: #2c2f3a;
-    --text: #e7e8ec;
-    --muted: #8b8d98;
-    --accent: #4f8cff;
-    --danger: #e5534b;
-    --ok: #35b56a;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-  header {
-    padding: 12px 20px;
-    background: var(--panel);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-  header h1 {
-    font-size: 15px;
-    font-weight: 600;
-    margin: 0;
-    color: var(--text);
-  }
-  .status {
-    font-size: 13px;
-    color: var(--muted);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--danger);
-  }
-  .dot.on { background: var(--ok); }
-  .spacer { flex: 1; }
-  button {
-    font: inherit;
-    font-size: 13px;
-    padding: 7px 14px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: #262835;
-    color: var(--text);
-    cursor: pointer;
-  }
-  button:hover { border-color: var(--accent); }
-  button:disabled { opacity: 0.4; cursor: not-allowed; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
-  main {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: auto;
-    background: #0b0c0f;
-  }
-  #screen {
-    width: 100%;
-    height: 100%;
-  }
-  .placeholder {
-    color: var(--muted);
-    font-size: 14px;
-    text-align: center;
-  }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Firefox Remote Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            surface: {
+              50: '#f8f9fc',
+              100: '#f1f3f8',
+              200: '#e2e6f0',
+              300: '#c4cbd9',
+              400: '#9aa3b8',
+              500: '#6b768e',
+              600: '#4f5a72',
+              700: '#3a4459',
+              800: '#262f41',
+              900: '#1a2230',
+              950: '#0f1622',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    body { background: #0f1622; color: #e2e6f0; }
+    .glass {
+      background: rgba(26, 34, 48, 0.7);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(196, 203, 217, 0.08);
+    }
+    .glass-light {
+      background: rgba(38, 47, 65, 0.6);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(196, 203, 217, 0.06);
+    }
+    .card-hover {
+      transition: all 0.2s ease;
+    }
+    .card-hover:hover {
+      transform: translateY(-2px);
+      border-color: rgba(79, 70, 229, 0.3);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+    }
+    .status-dot.running { background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.5); }
+    .status-dot.suspended { background: #f59e0b; box-shadow: 0 0 8px rgba(245, 158, 11, 0.5); }
+    .status-dot.stopped { background: #6b7280; }
+    .status-dot.error { background: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.5); }
+    .status-dot.starting { background: #3b82f6; animation: pulse 1s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    #vncCanvas { width: 100%; height: 100%; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; background: #020617; }
+    #vncCanvas canvas { display: block; margin: auto; max-width: 100%; max-height: 100%; width: auto; height: auto; }
+    #vncCanvas canvas.zoomed { width: auto !important; height: auto !important; max-width: 100% !important; max-height: 100% !important; }
+    .vnc-controls { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; padding: 6px 8px; background: rgba(15, 22, 34, 0.85); backdrop-filter: blur(8px); border: 1px solid rgba(196, 203, 217, 0.1); border-radius: 8px; opacity: 0; transition: opacity 0.2s; z-index: 10; pointer-events: none; }
+    #vncContainer:hover .vnc-controls, .vnc-controls.visible { opacity: 1; pointer-events: auto; }
+    .vnc-controls button { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: #9aa3b8; background: transparent; border: none; cursor: pointer; transition: all 0.15s; }
+    .vnc-controls button:hover { background: rgba(79, 70, 229, 0.2); color: #e2e6f0; }
+    .workspace-enter { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+    .sidebar-item {
+      transition: all 0.15s ease;
+    }
+    .sidebar-item:hover {
+      background: rgba(79, 70, 229, 0.1);
+    }
+    .sidebar-item.active {
+      background: rgba(79, 70, 229, 0.15);
+      border-color: rgba(79, 70, 229, 0.4);
+    }
+    .spinner {
+      width: 20px; height: 20px; border: 2px solid rgba(79, 70, 229, 0.2);
+      border-top-color: #4f46e5; border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(196, 203, 217, 0.2); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(196, 203, 217, 0.3); }
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; z-index: 100;
+      animation: slideUp 0.3s ease;
+    }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
 </head>
 <body>
-  <header>
-    <h1>Firefox remote control</h1>
-    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Chưa chạy</span></div>
-    <div class="spacer"></div>
-    <button id="startBtn" class="primary">Bắt đầu phiên</button>
-    <button id="stopBtn" class="danger" disabled>Dừng phiên</button>
-  </header>
-  <main>
-    <div id="screen"><div class="placeholder">Bấm "Bắt đầu phiên" để khởi động Firefox</div></div>
-  </main>
+  <div id="app" class="min-h-screen">
+    <div id="dashboardView" class="hidden">
+      <header class="glass border-b border-surface-700/30 px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center text-white font-semibold text-sm">F</div>
+          <h1 class="text-lg font-semibold text-surface-100">Firefox Remote Control</h1>
+        </div>
+        <div class="flex items-center gap-4">
+          <div id="systemStatus" class="flex items-center gap-3 text-sm">
+            <span class="text-surface-400">CPU <span id="cpuDisplay" class="text-surface-200 font-medium">-</span></span>
+            <span class="text-surface-400">RAM <span id="ramDisplay" class="text-surface-200 font-medium">-</span></span>
+          </div>
+          <button id="createSessionBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            New Session
+          </button>
+        </div>
+      </header>
 
-  <script type="module">
-    import RFB from './novnc/core/rfb.js';
+      <div class="max-w-7xl mx-auto px-6 py-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div class="glass rounded-xl p-5 card-hover">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-surface-400 text-sm font-medium">Running</span>
+              <span class="status-dot running"></span>
+            </div>
+            <div id="statRunning" class="text-3xl font-bold text-surface-100">0</div>
+          </div>
+          <div class="glass rounded-xl p-5 card-hover">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-surface-400 text-sm font-medium">Suspended</span>
+              <span class="status-dot suspended"></span>
+            </div>
+            <div id="statSuspended" class="text-3xl font-bold text-surface-100">0</div>
+          </div>
+          <div class="glass rounded-xl p-5 card-hover">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-surface-400 text-sm font-medium">Stopped</span>
+              <span class="status-dot stopped"></span>
+            </div>
+            <div id="statStopped" class="text-3xl font-bold text-surface-100">0</div>
+          </div>
+          <div class="glass rounded-xl p-5 card-hover">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-surface-400 text-sm font-medium">Total</span>
+              <span class="text-indigo-400 text-sm font-medium">sessions</span>
+            </div>
+            <div id="statTotal" class="text-3xl font-bold text-surface-100">0</div>
+          </div>
+        </div>
 
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const statusDot = document.getElementById('statusDot');
-    const statusText = document.getElementById('statusText');
-    const screenEl = document.getElementById('screen');
+        <div id="sessionGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        </div>
 
-    let rfb = null;
+        <div id="emptyState" class="text-center py-24">
+          <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-surface-800/50 flex items-center justify-center">
+            <svg class="w-8 h-8 text-surface-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+          </div>
+          <h3 class="text-surface-300 text-lg font-medium mb-2">No sessions yet</h3>
+          <p class="text-surface-500 text-sm mb-6">Create your first browser session to get started.</p>
+          <button id="emptyCreateBtn" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-all duration-200">Create Session</button>
+        </div>
+      </div>
+    </div>
 
-    // Nếu bạn bật API_TOKEN ở server, set token này (hoặc lấy từ prompt/localStorage của bạn)
-    const API_TOKEN = "jasmin";
+    <div id="workspaceView" class="hidden h-screen flex">
+      <div id="workspaceSidebar" class="glass-light w-56 border-r border-surface-700/30 p-3 overflow-y-auto shrink-0 flex flex-col">
+        <div class="text-xs font-medium text-surface-400 uppercase tracking-wider mb-3 px-2">Sessions</div>
+        <div id="sidebarList" class="space-y-1 flex-1"></div>
+        <div class="border-t border-surface-700/30 pt-3 mt-3 space-y-1">
+          <button id="backToDashboard" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-surface-700/50 text-surface-400 hover:text-surface-200 text-xs transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            Dashboard
+          </button>
+        </div>
+      </div>
 
-    async function api(pathName, opts = {}) {
-      const res = await fetch(pathName, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Api-Token': API_TOKEN },
-        ...opts,
-      });
-      if (!res.ok) throw new Error((await res.json()).error || res.statusText);
-      return res.json();
-    }
+      <div class="flex-1 flex flex-col">
+          <div id="vncContainer" class="flex-1 relative overflow-hidden">
+          <div id="vncCanvas" class="absolute inset-0"></div>
+          <div id="vncOverlay" class="absolute inset-0 flex items-center justify-center bg-surface-950/80 hidden">
+            <div class="text-center">
+              <div class="spinner mx-auto mb-3"></div>
+              <p class="text-surface-400 text-sm">Connecting to session...</p>
+            </div>
+          </div>
+          <div id="vncControls" class="vnc-controls">
+            <button id="vncCtrlAltDel" title="Send Ctrl+Alt+Del">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+            </button>
+            <button id="vncFullscreen" title="Fullscreen">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+            </button>
+            <button id="vncDisconnect" title="Disconnect">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
 
-    function setRunning(running) {
-      statusDot.classList.toggle('on', running);
-      statusText.textContent = running ? 'Đang chạy' : 'Chưa chạy';
-      startBtn.disabled = running;
-      stopBtn.disabled = !running;
-    }
+        <div class="glass border-t border-surface-700/30 px-3 py-1.5 flex items-center justify-between text-xs text-surface-500">
+          <div class="flex items-center gap-3">
+            <button id="toolbarReconnect" class="p-1.5 rounded hover:bg-surface-700/50 transition-colors" title="Reconnect">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            </button>
+            <button id="toolbarRestart" class="p-1.5 rounded hover:bg-surface-700/50 transition-colors" title="Restart">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18V18a6 6 0 0112 0v0m-6-12V4m0 0H8m2 2h6"/></svg>
+            </button>
+            <button id="toolbarStop" class="p-1.5 rounded hover:bg-red-600/20 text-red-400 transition-colors" title="Stop Session">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18V18a6 6 0 0112 0v0m-6-12V4m0 0H8m2 2h6"/></svg>
+            </button>
+            <span class="w-px h-4 bg-surface-700/30"></span>
+            <span id="workspaceVncStatus" class="text-surface-400">Disconnected</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span id="workspaceSessionId" class="font-mono text-surface-500"></span>
+            <span id="workspaceResolution" class="text-surface-500"></span>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    function connectVnc() {
-      screenEl.innerHTML = '';
-      const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/vnc';
-      rfb = new RFB(screenEl, url);
-      rfb.viewOnly = false;
-      rfb.scaleViewport = true;
-      rfb.addEventListener('disconnect', () => {
-        screenEl.innerHTML = '<div class="placeholder">Mất kết nối tới phiên Firefox</div>';
-      });
-    }
+    <div id="loadingOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-surface-950/80 hidden">
+      <div class="text-center">
+        <div class="spinner mx-auto mb-4" style="width:32px;height:32px;border-width:3px"></div>
+        <p id="loadingText" class="text-surface-300 text-sm">Loading...</p>
+      </div>
+    </div>
 
-    startBtn.addEventListener('click', async () => {
-      startBtn.disabled = true;
-      statusText.textContent = 'Đang khởi động...';
-      try {
-        await api('/api/session/start');
-        setRunning(true);
-        // đợi Xvfb/Firefox/x11vnc lên hẳn rồi mới connect VNC
-        setTimeout(connectVnc, 1500);
-      } catch (err) {
-        alert('Lỗi khi khởi động: ' + err.message);
-        startBtn.disabled = false;
-        statusText.textContent = 'Chưa chạy';
-      }
-    });
+    <div id="toastContainer" class="fixed bottom-6 right-6 z-50 space-y-2"></div>
+  </div>
 
-    stopBtn.addEventListener('click', async () => {
-      await api('/api/session/stop');
-      rfb?.disconnect();
-      setRunning(false);
-      screenEl.innerHTML = '<div class="placeholder">Bấm "Bắt đầu phiên" để khởi động Firefox</div>';
-    });
-  </script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

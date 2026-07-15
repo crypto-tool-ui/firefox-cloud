@@ -1,0 +1,166 @@
+{
+  "name": "firefox-remote",
+  "version": "2.0.0",
+  "generatedAt": "2026-07-15",
+  "lastAnalysis": "post-refactor at commit HEAD",
+  "content": {
+    "projectSummary": {
+      "purpose": "Multi-session remote browser control platform. Spawns Firefox instances on virtual X displays (Xvfb), streams via VNC (x11vnc), proxies VNC over WebSocket to browser-based noVNC canvas. Sessions persist independently of browser tabs.",
+      "targetUsers": "Developers and system administrators needing remote browser access for testing, automation, or GUI interaction on headless VPS servers.",
+      "businessDomain": "Remote browser access / cloud browser infrastructure",
+      "implementationStatus": "Production-ready MVP. Multi-session, multi-user capable, with security hardening. Ready for deployment behind Nginx."
+    },
+    "techStack": {
+      "runtime": "Node.js",
+      "language": "JavaScript (ES2020+)",
+      "packageManager": "npm",
+      "webFramework": "Express 5.2.1",
+      "wsLibrary": "ws 8.21.0",
+      "envConfig": "dotenv 17.4.2",
+      "frontend": "Vanilla HTML/CSS/JS + TailwindCSS (CDN)",
+      "vncClient": "@novnc/novnc 1.7.0 (bundled in public/novnc/)",
+      "security": ["helmet 8.1.0", "express-rate-limit 7.5.0", "cors 2.8.5"],
+      "uuid": "uuid 11.1.0",
+      "systemDeps": ["Xvfb", "x11vnc", "fluxbox", "firefox (or firefox-esr)"],
+      "testing": "Node --test (no tests written yet)",
+      "deployment": "Manual / systemd service, optionally behind Nginx reverse proxy with TLS"
+    },
+    "folderResponsibilities": {
+      "server/app.js": "Entry point. Express setup, route mounting, server lifecycle, SIGINT/SIGTERM handlers.",
+      "server/routes/": "Express route definitions. sessionRoutes.js (CRUD + actions), systemRoutes.js (status/stats).",
+      "server/controllers/": "Request handlers. sessionController.js, systemController.js. Async with try/catch.",
+      "server/sessions/": "SessionManager.js — Core lifecycle engine. Creates/destroys/suspends/resumes/restarts Firefox sessions. Each session has isolated Xvfb, Firefox, x11vnc, fluxbox processes.",
+      "server/websocket/": "VncProxyManager.js — WebSocket-to-TCP VNC proxy with per-session routing. Supports concurrent VNC connections to different sessions.",
+      "server/middleware/": "auth.js (API token), security.js (helmet + CORS + rate limiting), validate.js (input validation).",
+      "server/utils/": "logger.js (structured logging), displayAllocator.js (X display allocation), portAllocator.js (VNC port allocation).",
+      "public/": "Static web root. index.html (TailwindCSS dashboard), js/app.js (frontend logic), novnc/ (bundled library).",
+      "profiles/": "Per-session Firefox profile directories (created at runtime).",
+      ".env.example": "Environment configuration template."
+    },
+    "architecture": {
+      "requestFlow": "Browser → Express → REST API (/api/sessions/*) → SessionManager → spawn/kill child processes (Xvfb, fluxbox, Firefox, x11vnc). VNC traffic: Browser → WebSocket (/vnc?session=:id) → VncProxyManager → TCP → x11vnc → Xvfb display.",
+      "dataFlow": "Client input → RFB (noVNC) encodes as RFB binary → WebSocket → VncProxyManager routes by sessionId → TCP to x11vnc → Xvfb → Firefox. Reverse: framebuffer changes → x11vnc → TCP → WebSocket → RFB decodes → canvas.",
+      "authenticationFlow": "Optional static API token via X-Api-Token header. Checked by requireAuth middleware against API_TOKEN env var. Bypassed entirely when API_TOKEN is falsy. Frontend reads token from localStorage.",
+      "stateManagement": "In-memory Map in SessionManager (sessionId → Session object). Display/port allocators use simple counters. No database. Architecture supports swapping SessionManager with SQLite/Postgres/Redis adapter.",
+      "dependencyGraph": "server/app.js imports SessionManager, VncProxyManager, security, routes. SessionManager imports child_process, uuid, allocators, logger. VncProxyManager imports net, ws, logger."
+    },
+    "database": {
+      "type": "None. All session metadata stored in-memory. Architecture supports pluggable persistence via SessionManager interface replacement."
+    },
+    "apis": {
+      "sessionREST": [
+        { "method": "GET", "path": "/api/sessions", "query": "?status=running|suspended|stopped", "auth": "X-Api-Token", "response": "{ sessions: [], stats: {} }" },
+        { "method": "POST", "path": "/api/sessions", "auth": "X-Api-Token", "body": "{ width?, height?, owner? }", "response": "201 { session: {} } | 500 { error }" },
+        { "method": "GET", "path": "/api/sessions/:id", "auth": "X-Api-Token", "response": "{ session: {} } | 404" },
+        { "method": "DELETE", "path": "/api/sessions/:id", "auth": "X-Api-Token", "response": "{ ok: true }" },
+        { "method": "POST", "path": "/api/sessions/:id/start", "auth": "X-Api-Token", "response": "{ ok: true }" },
+        { "method": "POST", "path": "/api/sessions/:id/stop", "auth": "X-Api-Token", "response": "{ ok: true }" },
+        { "method": "POST", "path": "/api/sessions/:id/restart", "auth": "X-Api-Token", "response": "{ session: {} }" },
+        { "method": "POST", "path": "/api/sessions/:id/reconnect", "auth": "X-Api-Token", "response": "{ session: {} }" }
+      ],
+      "systemREST": [
+        { "method": "GET", "path": "/api/system/status", "auth": "X-Api-Token", "response": "{ cpu, memory, hostname, platform, uptime, sessions }" },
+        { "method": "GET", "path": "/api/system/stats", "auth": "X-Api-Token", "response": "{ total, running, suspended, stopped }" }
+      ],
+      "legacyCompat": [
+        { "method": "GET", "path": "/api/session/status", "auth": "optional", "response": "{ running: boolean, stats: {} }" }
+      ],
+      "websocket": [{ "path": "/vnc?session=:id", "protocol": "RFB binary over WebSocket", "description": "Per-session VNC WebSocket proxy" }],
+      "staticFiles": ["/* (Express static middleware serves public/)"]
+    },
+    "businessModules": {
+      "SessionManager": "Multi-session lifecycle engine. Creates isolated Firefox sessions each with their own Xvfb display, Firefox profile, x11vnc server, optional fluxbox. Supports create/destroy/suspend/resume/restart. Processes idle timeout. Handles unexpected process death cleanup.",
+      "VncProxyManager": "WebSocket-to-TCP VNC proxy with per-session routing. Supports concurrent WebSocket connections for different sessions. Connects/disconnects VNC tunnels based on session lifecycle events.",
+      "SecurityMiddleware": "Helmet security headers, CORS configuration, rate limiting (global + API-specific), optional API token authentication, input validation for session creation.",
+      "ResourceAllocators": "Display number and port number allocators with release/recycle support. In-memory counters.",
+      "StructuredLogger": "Timestamped, leveled, tagged logging (debug/info/warn/error). Controlled by LOG_LEVEL env var.",
+      "FrontendDashboard": "TailwindCSS single-page application. Dark theme with glassmorphism. Dashboard with stat cards, session grid, workspace view with sidebar + toolbar + VNC canvas. Live system stats polling."
+    },
+    "codingStandards": {
+      "namingConventions": {
+        "files": "kebab-case for directories, camelCase for JS files",
+        "classes": "PascalCase (SessionManager, VncProxyManager, Session)",
+        "functions": "camelCase (createSession, stopSession, attachToServer)",
+        "variables": "camelCase (sessionManager, rfbPort)",
+        "constants": "UPPER_SNAKE_CASE (PORT, RFB_PORT, API_TOKEN)"
+      },
+      "language": "JavaScript (CommonJS: require/module.exports on server, ES modules: import/export on frontend). No TypeScript.",
+      "errorHandling": "Async/await with try/catch in controllers. Session objects track error status. Process 'exit' events trigger automatic session cleanup.",
+      "logging": "Structured [timestamp] [LEVEL] [tag] message format via server/utils/logger.js. English only.",
+      "validation": "Session create validates width (640-3840) and height (480-2160). Session ID existence checked in controllers. Legacy endpoint preserved.",
+      "testing": "No test files yet. Node --test available (npm test)."
+    },
+    "existingFeatures": [
+      "Multi-session concurrent Firefox instances",
+      "Session create/destroy/stop/restart/reconnect",
+      "Session suspend/resume (idle timeout)",
+      "Isolated Xvfb display per session",
+      "Isolated Firefox profile per session",
+      "Isolated VNC port per session",
+      "Optional window manager per session",
+      "WebSocket-to-TCP VNC proxy with session routing",
+      "REST API with auth token",
+      "Low resource idle (suspend stops x11vnc only)",
+      "Session auto-cleanup on process crash",
+      "SIGINT/SIGTERM graceful shutdown",
+      "Helmet security headers",
+      "Rate limiting on API",
+      "CORS configuration",
+      "Input validation on session creation",
+      "Structured logging",
+      "Port/display number allocation management",
+      "System info endpoint (CPU, memory, uptime)",
+      "TailwindCSS dark-theme dashboard with glassmorphism",
+      "Session grid with live status cards",
+      "Workspace view with sidebar + toolbar + VNC canvas",
+      "Live system stats polling",
+      "Legacy API backward compatibility (/api/session/status)"
+    ],
+    "missingFeatures": [
+      "Postgres/SQLite session persistence",
+      "File upload/download to/from browser",
+      "Session live thumbnails",
+      "Clipboard sync host ↔ browser",
+      "User accounts/JWT auth",
+      "Websocket control channel per session",
+      "Session workspace view",
+      "Live session logs",
+      "Audio streaming",
+      "Dockerfile",
+      "CI/CD",
+      "Comprehensive test suite"
+    ],
+    "technicalDebt": [
+      "Allocator reset — Display/port allocators are in-memory; server restart resets them",
+      "No process group — Child processes not spawned in a group; edge cases may orphan",
+      "Xvfb fs wait — _waitForX polls filesystem every 100ms; no X11 sync protocol",
+      "Suspend stops x11vnc only — Xvfb/Firefox consume RAM while suspended",
+      "Single commit — No meaningful git history",
+      "No graceful degradation — Crashes if system deps not installed",
+      "Session metadata lost — All in-memory; server restart wipes sessions"
+    ],
+    "importantFiles": {
+      "server/app.js": "Entry point, route mounting, server lifecycle",
+      "server/sessions/SessionManager.js": "Core session lifecycle engine",
+      "server/websocket/vncProxy.js": "VNC WebSocket proxy with session routing",
+      "server/middleware/auth.js": "API token authentication",
+      "server/controllers/sessionController.js": "Session API handlers",
+      "public/index.html": "Frontend dashboard + workspace",
+      "public/js/app.js": "Frontend application logic",
+      "package.json": "Dependencies and scripts",
+      ".env.example": "Environment configuration template"
+    },
+    "knownIssues": [
+      "Display/port allocators reset on server restart",
+      "Child processes not in process group; kill() may orphan",
+      "Xvfb wait uses filesystem polling (100ms)"
+    ],
+    "developmentWorkflow": {
+      "setup": "sudo apt install xvfb x11vnc fluxbox firefox-esr && npm install",
+      "configure": "cp .env.example .env && edit API_TOKEN",
+      "run": "npm start  (or node server/app.js)",
+      "dev": "npm run dev  (node --watch server/app.js)",
+      "deploy": "Behind Nginx reverse proxy with TLS, managed by systemd"
+    }
+  }
+}

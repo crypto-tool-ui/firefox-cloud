@@ -1,18 +1,25 @@
 {
   "name": "firefox-remote",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "2.0.0",
+  "description": "Remote Firefox browser control platform",
+  "main": "server/app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server/app.js",
+    "dev": "node --watch server/app.js",
+    "test": "node --test server/**/*.test.js",
+    "lint": "npx eslint server/ public/"
   },
-  "keywords": [],
+  "keywords": ["firefox", "vnc", "remote", "browser", "xvfb"],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@novnc/novnc": "^1.7.0",
+    "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.1.0",
+    "uuid": "^11.1.0",
     "ws": "^8.21.0"
   }
 }
